@@ -15,10 +15,11 @@ pkg install -y python pip git
 # 克隆仓库
 echo "⬇️  克隆仓库..."
 cd ~
+rm -rf Zorix-browser
 git clone https://github.com/h1collab/Zorix-browser
 cd Zorix-browser
 
-# 安装Python依赖
+# 安装Python依赖 (不包括Pillow - Termux中难以编译)
 echo "📚 安装Python依赖..."
 pip install -r requirements.txt
 
@@ -26,8 +27,11 @@ echo ""
 echo "✅ 安装完成!"
 echo ""
 echo "🚀 启动浏览器:"
+echo "   cd ~/Zorix-browser"
 echo "   python zorix_browser.py"
 echo ""
-echo "或使用命令:"
-echo "   zorix"
+echo "📍 或创建快捷命令:"
+echo "   echo 'cd ~/Zorix-browser && python zorix_browser.py' > ~/.zorix"
+echo "   chmod +x ~/.zorix"
+echo "   ~/.zorix"
 echo ""

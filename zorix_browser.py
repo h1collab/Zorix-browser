@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Zorix Browser - 真实的终端网络浏览器
-在Termux、Linux和Mac上运行
+在 Termux、Linux 和 Mac 上运行
 """
 
 import sys
@@ -60,16 +60,16 @@ class ZorixBrowser:
             self.history.append(url)
             return response.text
         except requests.exceptions.MissingSchema:
-            print(f"{Fore.RED}❌ 无效的URL格式{Style.RESET_ALL}")
+            print(f"{Fore.RED}✖ 无效的URL格式{Style.RESET_ALL}")
             return None
         except requests.exceptions.ConnectionError:
-            print(f"{Fore.RED}❌ 连接失败 - 请检查网络{Style.RESET_ALL}")
+            print(f"{Fore.RED}✖ 连接失败 - 请检查网络{Style.RESET_ALL}")
             return None
         except requests.exceptions.Timeout:
-            print(f"{Fore.RED}❌ 连接超时{Style.RESET_ALL}")
+            print(f"{Fore.RED}✖ 连接超时{Style.RESET_ALL}")
             return None
         except Exception as e:
-            print(f"{Fore.RED}❌ 错误: {str(e)}{Style.RESET_ALL}")
+            print(f"{Fore.RED}✖ 错误: {str(e)}{Style.RESET_ALL}")
             return None
     
     def parse_html(self, html_content):
@@ -87,7 +87,7 @@ class ZorixBrowser:
             
             return lines
         except Exception as e:
-            print(f"{Fore.RED}❌ 解析错误: {str(e)}{Style.RESET_ALL}")
+            print(f"{Fore.RED}✖ 解析错误: {str(e)}{Style.RESET_ALL}")
             return []
     
     def extract_links(self, html_content):
@@ -166,9 +166,9 @@ class ZorixBrowser:
                 url = self.current_links[link_id]['url']
                 self.open_url(url)
             else:
-                print(f"{Fore.RED}❌ 链接不存在{Style.RESET_ALL}")
+                print(f"{Fore.RED}✖ 链接不存在{Style.RESET_ALL}")
         except ValueError:
-            print(f"{Fore.RED}❌ 请输入有效的链接编号{Style.RESET_ALL}")
+            print(f"{Fore.RED}✖ 请输入有效的链接编号{Style.RESET_ALL}")
     
     def load_bookmarks(self):
         """加载书签"""
@@ -190,14 +190,14 @@ class ZorixBrowser:
         if self.current_url:
             bookmark = {
                 'url': self.current_url,
-                'title': input("输入书签标题: ").strip(),
+                'title': input(f"{Fore.GREEN}输入书签标题: {Style.RESET_ALL}").strip(),
                 'date': datetime.now().isoformat()
             }
             self.bookmarks.append(bookmark)
             self.save_bookmarks()
             print(f"{Fore.GREEN}✅ 书签已保存{Style.RESET_ALL}")
         else:
-            print(f"{Fore.RED}❌ 没有当前页面{Style.RESET_ALL}")
+            print(f"{Fore.RED}✖ 没有当前页面{Style.RESET_ALL}")
     
     def show_bookmarks(self):
         """显示书签"""
@@ -223,11 +223,11 @@ class ZorixBrowser:
     def show_history(self):
         """显示历史记录"""
         if not self.history:
-            print(f"{Fore.YELLOW}📜 没有历史记录{Style.RESET_ALL}")
+            print(f"{Fore.YELLOW}📋 没有历史记录{Style.RESET_ALL}")
             return
         
         print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}📜 浏览历史:{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}📋 浏览历史:{Style.RESET_ALL}")
         print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
         
         for i, url in enumerate(reversed(list(self.history)), 1):
@@ -290,19 +290,19 @@ class ZorixBrowser:
                     if args:
                         self.open_url(args)
                     else:
-                        print(f"{Fore.RED}❌ 请提供URL{Style.RESET_ALL}")
+                        print(f"{Fore.RED}✖ 请提供URL{Style.RESET_ALL}")
                 
                 elif command == 'search':
                     if args:
                         self.search(args)
                     else:
-                        print(f"{Fore.RED}❌ 请提供搜索关键词{Style.RESET_ALL}")
+                        print(f"{Fore.RED}✖ 请提供搜索关键词{Style.RESET_ALL}")
                 
                 elif command == 'refresh':
                     if self.current_url:
                         self.open_url(self.current_url)
                     else:
-                        print(f"{Fore.RED}❌ 没有当前页面{Style.RESET_ALL}")
+                        print(f"{Fore.RED}✖ 没有当前页面{Style.RESET_ALL}")
                 
                 elif command == 'bookmarks':
                     self.show_bookmarks()
@@ -327,13 +327,13 @@ class ZorixBrowser:
                     self.click_link(command)
                 
                 else:
-                    print(f"{Fore.RED}❌ 未知命令: {command}{Style.RESET_ALL}")
+                    print(f"{Fore.RED}✖ 未知命令: {command}{Style.RESET_ALL}")
                     print(f"{Fore.YELLOW}输入 'help' 获取帮助{Style.RESET_ALL}")
             
             except KeyboardInterrupt:
                 print(f"\n{Fore.YELLOW}中断 (按 Ctrl+C 再次退出){Style.RESET_ALL}")
             except Exception as e:
-                print(f"{Fore.RED}❌ 错误: {str(e)}{Style.RESET_ALL}")
+                print(f"{Fore.RED}✖ 错误: {str(e)}{Style.RESET_ALL}")
 
 
 def main():

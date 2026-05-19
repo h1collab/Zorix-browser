@@ -1,0 +1,3 @@
+#!/bin/bash
+# Zorix 浏览器快速启动脚本 (放在 ~/.local/bin/ 中)
+cd ~/Zorix-browser && python3 zorix_browser.py
