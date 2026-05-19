@@ -7,19 +7,21 @@ with open('README.md', 'r', encoding='utf-8') as f:
 setup(
     name='Zorix-Browser',
     version='1.0.0',
-    description='A functional lightweight web browser',
+    description='真实的终端网络浏览器 - 在Termux中可用',
     long_description=long_description,
     long_description_content_type='text/markdown',
     author='h1collab',
     url='https://github.com/h1collab/Zorix-browser',
     python_requires='>=3.8',
     install_requires=[
-        'PyQt5>=5.15.0',
-        'PyQtWebEngine>=5.15.0',
+        'requests>=2.25.0',
+        'beautifulsoup4>=4.9.0',
+        'lxml>=4.6.0',
+        'colorama>=0.4.0',
     ],
     entry_points={
         'console_scripts': [
-            'zorix-browser=zorix_browser:main',
+            'zorix=zorix_browser:main',
         ],
     },
     classifiers=[
@@ -30,5 +32,6 @@ setup(
         'Programming Language :: Python :: 3.8',
         'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
+        'Environment :: Console',
     ],
 )

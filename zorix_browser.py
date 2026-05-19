@@ -1,381 +1,344 @@
 #!/usr/bin/env python3
 """
-Zorix Browser - A functional web browser application
-Main entry point for the browser
+Zorix Browser - 真实的终端网络浏览器
+在Termux、Linux和Mac上运行
 """
 
 import sys
 import os
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QTabWidget, QLineEdit, QPushButton, QLabel, QDialog, QListWidget, QListWidgetItem
-from PyQt5.QtCore import Qt, QUrl, QTimer, QThread, pyqtSignal
-from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineProfile
-from PyQt5.QtGui import QIcon, QKeySequence
-from PyQt5.QtWidgets import QMessageBox
 import json
+import requests
+from urllib.parse import urljoin, urlparse
 from datetime import datetime
+from bs4 import BeautifulSoup
+import re
+from collections import deque
+
+try:
+    from colorama import Fore, Back, Style, init
+    init(autoreset=True)
+    HAS_COLORAMA = True
+except ImportError:
+    HAS_COLORAMA = False
+    class Fore:
+        CYAN = ''
+        GREEN = ''
+        YELLOW = ''
+        RED = ''
+        WHITE = ''
+    class Back:
+        BLACK = ''
+    class Style:
+        BRIGHT = ''
+        RESET_ALL = ''
 
 
-class BrowserWindow(QMainWindow):
+class ZorixBrowser:
     def __init__(self):
-        super().__init__()
-        self.setWindowTitle('Zorix Browser')
-        self.setGeometry(100, 100, 1200, 800)
-        
-        # Initialize browser state
+        self.history = deque(maxlen=100)
         self.bookmarks = self.load_bookmarks()
-        self.history = self.load_history()
-        
-        # Create main widget and layout
-        main_widget = QWidget()
-        self.setCentralWidget(main_widget)
-        main_layout = QVBoxLayout()
-        
-        # Create toolbar
-        toolbar_layout = QHBoxLayout()
-        
-        # Back button
-        self.back_btn = QPushButton('← Back')
-        self.back_btn.clicked.connect(self.go_back)
-        toolbar_layout.addWidget(self.back_btn)
-        
-        # Forward button
-        self.forward_btn = QPushButton('Forward →')
-        self.forward_btn.clicked.connect(self.go_forward)
-        toolbar_layout.addWidget(self.forward_btn)
-        
-        # Reload button
-        self.reload_btn = QPushButton('⟳ Reload')
-        self.reload_btn.clicked.connect(self.reload_page)
-        toolbar_layout.addWidget(self.reload_btn)
-        
-        # Stop button
-        self.stop_btn = QPushButton('⊗ Stop')
-        self.stop_btn.clicked.connect(self.stop_loading)
-        toolbar_layout.addWidget(self.stop_btn)
-        
-        # URL bar
-        self.url_bar = QLineEdit()
-        self.url_bar.setPlaceholderText('Enter URL or search...')
-        self.url_bar.returnPressed.connect(self.navigate_to_url)
-        toolbar_layout.addWidget(self.url_bar)
-        
-        # Go button
-        go_btn = QPushButton('Go')
-        go_btn.clicked.connect(self.navigate_to_url)
-        toolbar_layout.addWidget(go_btn)
-        
-        # Bookmark button
-        self.bookmark_btn = QPushButton('★ Bookmark')
-        self.bookmark_btn.clicked.connect(self.add_bookmark)
-        toolbar_layout.addWidget(self.bookmark_btn)
-        
-        # Show bookmarks
-        bookmarks_btn = QPushButton('📑 Bookmarks')
-        bookmarks_btn.clicked.connect(self.show_bookmarks)
-        toolbar_layout.addWidget(bookmarks_btn)
-        
-        main_layout.addLayout(toolbar_layout)
-        
-        # Create tab widget for multiple tabs
-        self.tabs = QTabWidget()
-        self.tabs.setTabsClosable(True)
-        self.tabs.tabCloseRequested.connect(self.close_tab)
-        main_layout.addWidget(self.tabs)
-        
-        # Create new tab button
-        new_tab_btn = QPushButton('+ New Tab')
-        new_tab_btn.clicked.connect(self.new_tab)
-        main_layout.addWidget(new_tab_btn)
-        
-        # Status bar
-        self.statusBar().showMessage('Ready')
-        
-        main_widget.setLayout(main_layout)
-        
-        # Create first tab
-        self.new_tab()
-        
-        # Keyboard shortcuts
-        self.setup_shortcuts()
+        self.current_url = None
+        self.current_content = None
+        self.current_links = {}
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        })
     
-    def setup_shortcuts(self):
-        """Setup keyboard shortcuts"""
-        # Ctrl+T for new tab
-        from PyQt5.QtWidgets import QShortcut
-        QShortcut(QKeySequence('Ctrl+T'), self).activated.connect(self.new_tab)
-        QShortcut(QKeySequence('Ctrl+W'), self).activated.connect(self.close_current_tab)
-        QShortcut(QKeySequence('Ctrl+R'), self).activated.connect(self.reload_page)
-        QShortcut(QKeySequence('Ctrl+L'), self).activated.connect(self.focus_url_bar)
+    def fetch_page(self, url):
+        """获取网页内容"""
+        try:
+            # 确保URL有protocol
+            if not url.startswith(('http://', 'https://', 'ftp://')):
+                url = 'https://' + url
+            
+            print(f"{Fore.CYAN}⏳ 正在加载: {url}{Style.RESET_ALL}")
+            response = self.session.get(url, timeout=10)
+            response.encoding = response.apparent_encoding or 'utf-8'
+            
+            self.current_url = url
+            self.history.append(url)
+            return response.text
+        except requests.exceptions.MissingSchema:
+            print(f"{Fore.RED}❌ 无效的URL格式{Style.RESET_ALL}")
+            return None
+        except requests.exceptions.ConnectionError:
+            print(f"{Fore.RED}❌ 连接失败 - 请检查网络{Style.RESET_ALL}")
+            return None
+        except requests.exceptions.Timeout:
+            print(f"{Fore.RED}❌ 连接超时{Style.RESET_ALL}")
+            return None
+        except Exception as e:
+            print(f"{Fore.RED}❌ 错误: {str(e)}{Style.RESET_ALL}")
+            return None
     
-    def new_tab(self):
-        """Create a new browser tab"""
-        browser = QWebEngineView()
-        browser.loadFinished.connect(lambda: self.on_load_finished())
-        browser.urlChanged.connect(lambda url: self.on_url_changed(url))
-        browser.titleChanged.connect(lambda title: self.on_title_changed(title))
+    def parse_html(self, html_content):
+        """解析HTML并提取内容"""
+        try:
+            soup = BeautifulSoup(html_content, 'html.parser')
+            
+            # 移除脚本和样式
+            for script in soup(['script', 'style', 'meta', 'link']):
+                script.decompose()
+            
+            # 提取文本
+            text = soup.get_text()
+            lines = [line.strip() for line in text.split('\n') if line.strip()]
+            
+            return lines
+        except Exception as e:
+            print(f"{Fore.RED}❌ 解析错误: {str(e)}{Style.RESET_ALL}")
+            return []
+    
+    def extract_links(self, html_content):
+        """从HTML提取所有链接"""
+        links = {}
+        try:
+            soup = BeautifulSoup(html_content, 'html.parser')
+            link_index = 1
+            
+            for a in soup.find_all('a', href=True):
+                href = a.get('href')
+                text = a.get_text(strip=True)[:50]  # 限制文本长度
+                
+                if href and text:
+                    full_url = urljoin(self.current_url, href)
+                    if full_url.startswith(('http://', 'https://')):
+                        links[link_index] = {
+                            'url': full_url,
+                            'text': text
+                        }
+                        link_index += 1
+            
+            self.current_links = links
+        except:
+            pass
         
-        # Load default home page
-        html_content = self.get_home_page()
-        browser.setHtml(html_content)
+        return links
+    
+    def display_page(self, html_content):
+        """在终端显示网页"""
+        self.current_content = html_content
+        lines = self.parse_html(html_content)
+        links = self.extract_links(html_content)
         
-        self.tabs.addTab(browser, 'New Tab')
-        self.tabs.setCurrentWidget(browser)
-        self.focus_url_bar()
-    
-    def close_tab(self, index):
-        """Close a tab"""
-        if self.tabs.count() > 1:
-            self.tabs.removeTab(index)
-        else:
-            self.close()
-    
-    def close_current_tab(self):
-        """Close current tab"""
-        self.close_tab(self.tabs.currentIndex())
-    
-    def navigate_to_url(self):
-        """Navigate to URL from address bar"""
-        url_text = self.url_bar.text().strip()
-        if not url_text:
-            return
+        # 显示页面信息
+        print(f"\n{Fore.GREEN}{'='*60}{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}📄 URL: {self.current_url}{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}{'='*60}{Style.RESET_ALL}\n")
         
-        # Handle search queries
-        if not url_text.startswith(('http://', 'https://', 'file://')):
-            if '.' not in url_text or ' ' in url_text:
-                # Search query
-                url_text = f'https://www.google.com/search?q={url_text}'
+        # 显示内容（前50行）
+        for i, line in enumerate(lines[:50]):
+            if i > 0 and i % 20 == 0:
+                print(f"{Fore.YELLOW}--- 继续滚动 ---{Style.RESET_ALL}")
+            print(line[:70])  # 限制每行长度
+        
+        if len(lines) > 50:
+            print(f"\n{Fore.YELLOW}... 还有 {len(lines)-50} 行内容 ...{Style.RESET_ALL}")
+        
+        # 显示链接
+        if links:
+            print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+            print(f"{Fore.GREEN}🔗 可用链接:{Style.RESET_ALL}")
+            print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+            for idx, link_info in sorted(links.items()):
+                print(f"  {Fore.YELLOW}[{idx}]{Style.RESET_ALL} {link_info['text']}")
+                print(f"       {Fore.CYAN}{link_info['url']}{Style.RESET_ALL}")
+    
+    def open_url(self, url):
+        """打开URL"""
+        html = self.fetch_page(url)
+        if html:
+            self.display_page(html)
+            return True
+        return False
+    
+    def search(self, query):
+        """搜索"""
+        search_url = f"https://www.bing.com/search?q={query.replace(' ', '+')}"
+        self.open_url(search_url)
+    
+    def click_link(self, link_id):
+        """点击链接"""
+        try:
+            link_id = int(link_id)
+            if link_id in self.current_links:
+                url = self.current_links[link_id]['url']
+                self.open_url(url)
             else:
-                url_text = 'https://' + url_text
-        
-        browser = self.tabs.currentWidget()
-        if browser:
-            browser.load(QUrl(url_text))
-            self.statusBar().showMessage(f'Loading {url_text}...')
-            self.add_to_history(url_text)
-    
-    def focus_url_bar(self):
-        """Focus on URL bar"""
-        self.url_bar.setFocus()
-        self.url_bar.selectAll()
-    
-    def on_url_changed(self, url):
-        """Handle URL changes"""
-        self.url_bar.setText(url.toString())
-    
-    def on_title_changed(self, title):
-        """Handle page title changes"""
-        if title:
-            self.tabs.setTabText(self.tabs.currentIndex(), title[:30])
-    
-    def on_load_finished(self):
-        """Handle page load completion"""
-        self.statusBar().showMessage('Page loaded successfully')
-    
-    def go_back(self):
-        """Go back in history"""
-        browser = self.tabs.currentWidget()
-        if browser:
-            browser.back()
-    
-    def go_forward(self):
-        """Go forward in history"""
-        browser = self.tabs.currentWidget()
-        if browser:
-            browser.forward()
-    
-    def reload_page(self):
-        """Reload current page"""
-        browser = self.tabs.currentWidget()
-        if browser:
-            browser.reload()
-            self.statusBar().showMessage('Reloading page...')
-    
-    def stop_loading(self):
-        """Stop loading current page"""
-        browser = self.tabs.currentWidget()
-        if browser:
-            browser.stop()
-            self.statusBar().showMessage('Loading stopped')
-    
-    def add_bookmark(self):
-        """Add current page to bookmarks"""
-        url = self.url_bar.text()
-        title = self.tabs.tabText(self.tabs.currentIndex())
-        
-        if url:
-            bookmark = {'url': url, 'title': title, 'date': datetime.now().isoformat()}
-            self.bookmarks.append(bookmark)
-            self.save_bookmarks()
-            self.statusBar().showMessage('Bookmarked!')
-    
-    def show_bookmarks(self):
-        """Show bookmarks dialog"""
-        dialog = QDialog(self)
-        dialog.setWindowTitle('Bookmarks')
-        dialog.setGeometry(200, 200, 500, 400)
-        
-        layout = QVBoxLayout()
-        list_widget = QListWidget()
-        
-        for bookmark in self.bookmarks:
-            item_text = f"{bookmark['title']} - {bookmark['url']}"
-            item = QListWidgetItem(item_text)
-            item.setData(Qt.UserRole, bookmark['url'])
-            list_widget.addItem(item)
-        
-        def open_bookmark():
-            item = list_widget.currentItem()
-            if item:
-                url = item.data(Qt.UserRole)
-                self.url_bar.setText(url)
-                self.navigate_to_url()
-                dialog.close()
-        
-        def delete_bookmark():
-            item = list_widget.currentItem()
-            if item:
-                index = list_widget.row(item)
-                self.bookmarks.pop(index)
-                self.save_bookmarks()
-                list_widget.takeItem(index)
-        
-        open_btn = QPushButton('Open')
-        open_btn.clicked.connect(open_bookmark)
-        
-        delete_btn = QPushButton('Delete')
-        delete_btn.clicked.connect(delete_bookmark)
-        
-        layout.addWidget(list_widget)
-        layout.addWidget(open_btn)
-        layout.addWidget(delete_btn)
-        
-        dialog.setLayout(layout)
-        dialog.exec_()
-    
-    def add_to_history(self, url):
-        """Add URL to history"""
-        self.history.insert(0, {'url': url, 'date': datetime.now().isoformat()})
-        if len(self.history) > 100:  # Keep last 100 entries
-            self.history = self.history[:100]
-        self.save_history()
+                print(f"{Fore.RED}❌ 链接不存在{Style.RESET_ALL}")
+        except ValueError:
+            print(f"{Fore.RED}❌ 请输入有效的链接编号{Style.RESET_ALL}")
     
     def load_bookmarks(self):
-        """Load bookmarks from file"""
+        """加载书签"""
         if os.path.exists('bookmarks.json'):
             try:
-                with open('bookmarks.json', 'r') as f:
+                with open('bookmarks.json', 'r', encoding='utf-8') as f:
                     return json.load(f)
             except:
                 return []
         return []
     
     def save_bookmarks(self):
-        """Save bookmarks to file"""
-        with open('bookmarks.json', 'w') as f:
-            json.dump(self.bookmarks, f, indent=2)
+        """保存书签"""
+        with open('bookmarks.json', 'w', encoding='utf-8') as f:
+            json.dump(self.bookmarks, f, ensure_ascii=False, indent=2)
     
-    def load_history(self):
-        """Load history from file"""
-        if os.path.exists('history.json'):
+    def add_bookmark(self):
+        """添加书签"""
+        if self.current_url:
+            bookmark = {
+                'url': self.current_url,
+                'title': input("输入书签标题: ").strip(),
+                'date': datetime.now().isoformat()
+            }
+            self.bookmarks.append(bookmark)
+            self.save_bookmarks()
+            print(f"{Fore.GREEN}✅ 书签已保存{Style.RESET_ALL}")
+        else:
+            print(f"{Fore.RED}❌ 没有当前页面{Style.RESET_ALL}")
+    
+    def show_bookmarks(self):
+        """显示书签"""
+        if not self.bookmarks:
+            print(f"{Fore.YELLOW}📚 没有书签{Style.RESET_ALL}")
+            return
+        
+        print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}📚 我的书签:{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+        
+        for i, bookmark in enumerate(self.bookmarks, 1):
+            print(f"  {Fore.YELLOW}[{i}]{Style.RESET_ALL} {bookmark['title']}")
+            print(f"       {Fore.CYAN}{bookmark['url']}{Style.RESET_ALL}")
+        
+        try:
+            choice = input(f"\n{Fore.GREEN}选择书签打开 (输入编号) 或 Enter 跳过: {Style.RESET_ALL}")
+            if choice.isdigit() and 1 <= int(choice) <= len(self.bookmarks):
+                self.open_url(self.bookmarks[int(choice)-1]['url'])
+        except KeyboardInterrupt:
+            pass
+    
+    def show_history(self):
+        """显示历史记录"""
+        if not self.history:
+            print(f"{Fore.YELLOW}📜 没有历史记录{Style.RESET_ALL}")
+            return
+        
+        print(f"\n{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}📜 浏览历史:{Style.RESET_ALL}")
+        print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+        
+        for i, url in enumerate(reversed(list(self.history)), 1):
+            print(f"  {Fore.YELLOW}[{i}]{Style.RESET_ALL} {Fore.CYAN}{url}{Style.RESET_ALL}")
+    
+    def show_help(self):
+        """显示帮助"""
+        help_text = f"""
+{Fore.GREEN}{'='*60}{Style.RESET_ALL}
+{Fore.CYAN}🌐 Zorix 浏览器 - 命令帮助{Style.RESET_ALL}
+{Fore.GREEN}{'='*60}{Style.RESET_ALL}
+
+{Fore.YELLOW}导航命令:{Style.RESET_ALL}
+  open <url>          - 打开网址 (例: open https://example.com)
+  search <keyword>    - 搜索 (例: search python tutorial)
+  <链接编号>          - 点击链接 (例: 1)
+
+{Fore.YELLOW}浏览命令:{Style.RESET_ALL}
+  refresh             - 刷新当前页面
+  bookmarks           - 显示书签列表
+  add-bookmark        - 保存当前页面为书签
+  history             - 显示浏览历史
+
+{Fore.YELLOW}系统命令:{Style.RESET_ALL}
+  clear               - 清屏
+  help                - 显示此帮助
+  quit / exit         - 退出浏览器
+
+{Fore.GREEN}{'='*60}{Style.RESET_ALL}
+"""
+        print(help_text)
+    
+    def run(self):
+        """主循环"""
+        print(f"{Fore.CYAN}")
+        print(r"""
+  _____ _____   ___ __  __ 
+ |__  / /  __ \/   \  \/  /
+  /_ / /  /__/  /\ \  \ / 
+|___/  \____/\_/__\ \/  
+                    
+        """)
+        print(f"{Fore.GREEN}欢迎使用 Zorix 浏览器")
+        print(f"真实的终端网络浏览器 v1.0{Style.RESET_ALL}\n")
+        print(f"{Fore.YELLOW}输入 'help' 获取帮助{Style.RESET_ALL}\n")
+        
+        while True:
             try:
-                with open('history.json', 'r') as f:
-                    return json.load(f)
-            except:
-                return []
-        return []
-    
-    def save_history(self):
-        """Save history to file"""
-        with open('history.json', 'w') as f:
-            json.dump(self.history, f, indent=2)
-    
-    def get_home_page(self):
-        """Get home page HTML"""
-        return """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Zorix Browser Home</title>
-            <style>
-                body {
-                    font-family: Arial, sans-serif;
-                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                    margin: 0;
-                    padding: 20px;
-                    min-height: 100vh;
-                    display: flex;
-                    justify-content: center;
-                    align-items: center;
-                }
-                .container {
-                    background: white;
-                    border-radius: 10px;
-                    padding: 40px;
-                    box-shadow: 0 10px 40px rgba(0,0,0,0.3);
-                    max-width: 600px;
-                    text-align: center;
-                }
-                h1 {
-                    color: #667eea;
-                    margin: 0 0 20px 0;
-                }
-                p {
-                    color: #666;
-                    line-height: 1.6;
-                }
-                .features {
-                    display: grid;
-                    grid-template-columns: 1fr 1fr;
-                    gap: 20px;
-                    margin-top: 30px;
-                    text-align: left;
-                }
-                .feature {
-                    padding: 15px;
-                    background: #f5f5f5;
-                    border-radius: 5px;
-                }
-                .feature h3 {
-                    color: #667eea;
-                    margin-top: 0;
-                }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h1>🌐 Zorix Browser</h1>
-                <p>Welcome to your lightweight, functional web browser.</p>
-                <div class="features">
-                    <div class="feature">
-                        <h3>📑 Tabbed Browsing</h3>
-                        <p>Open multiple tabs with Ctrl+T</p>
-                    </div>
-                    <div class="feature">
-                        <h3>★ Bookmarks</h3>
-                        <p>Save your favorite pages</p>
-                    </div>
-                    <div class="feature">
-                        <h3>⟳ Navigation</h3>
-                        <p>Go back and forward easily</p>
-                    </div>
-                    <div class="feature">
-                        <h3>🔍 Search</h3>
-                        <p>Built-in Google search</p>
-                    </div>
-                </div>
-                <hr style="margin-top: 30px; border: none; border-top: 1px solid #ddd;">
-                <p style="font-size: 12px; color: #999;">Zorix Browser v1.0</p>
-            </div>
-        </body>
-        </html>
-        """
+                user_input = input(f"{Fore.GREEN}> {Style.RESET_ALL}").strip()
+                
+                if not user_input:
+                    continue
+                
+                # 解析命令
+                parts = user_input.split(maxsplit=1)
+                command = parts[0].lower()
+                args = parts[1] if len(parts) > 1 else None
+                
+                if command == 'open':
+                    if args:
+                        self.open_url(args)
+                    else:
+                        print(f"{Fore.RED}❌ 请提供URL{Style.RESET_ALL}")
+                
+                elif command == 'search':
+                    if args:
+                        self.search(args)
+                    else:
+                        print(f"{Fore.RED}❌ 请提供搜索关键词{Style.RESET_ALL}")
+                
+                elif command == 'refresh':
+                    if self.current_url:
+                        self.open_url(self.current_url)
+                    else:
+                        print(f"{Fore.RED}❌ 没有当前页面{Style.RESET_ALL}")
+                
+                elif command == 'bookmarks':
+                    self.show_bookmarks()
+                
+                elif command == 'add-bookmark':
+                    self.add_bookmark()
+                
+                elif command == 'history':
+                    self.show_history()
+                
+                elif command == 'clear':
+                    os.system('clear' if os.name != 'nt' else 'cls')
+                
+                elif command == 'help':
+                    self.show_help()
+                
+                elif command in ['quit', 'exit', 'q']:
+                    print(f"{Fore.GREEN}👋 感谢使用 Zorix 浏览器!{Style.RESET_ALL}")
+                    break
+                
+                elif command.isdigit():
+                    self.click_link(command)
+                
+                else:
+                    print(f"{Fore.RED}❌ 未知命令: {command}{Style.RESET_ALL}")
+                    print(f"{Fore.YELLOW}输入 'help' 获取帮助{Style.RESET_ALL}")
+            
+            except KeyboardInterrupt:
+                print(f"\n{Fore.YELLOW}中断 (按 Ctrl+C 再次退出){Style.RESET_ALL}")
+            except Exception as e:
+                print(f"{Fore.RED}❌ 错误: {str(e)}{Style.RESET_ALL}")
 
 
 def main():
-    app = QApplication(sys.argv)
-    window = BrowserWindow()
-    window.show()
-    sys.exit(app.exec_())
+    browser = ZorixBrowser()
+    browser.run()
 
 
 if __name__ == '__main__':

@@ -22,3 +22,5 @@ bookmarks.json
 history.json
 .DS_Store
 *.log
+.venv/
+venv/
